@@ -1,0 +1,19 @@
+---
+name: Pull Request
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pr:
+    uses: JamesWoolfenden/.github/.github/workflows/terraform-pr-gcp.yml@main
+    with:
+      service_account: terraform-gcp-dataflow@pike-477416.iam.gserviceaccount.com
