@@ -1,0 +1,43 @@
+id: HLD_GCP_483
+name: Dataflow jobs using CMEK must grant the Dataflow service agent key access
+principle: encryption
+severity: MEDIUM
+rationale: |
+  Cloud Dataflow validates that the Dataflow Service Agent
+  (service-PROJECT_NUMBER@dataflow-service-producer-prod.iam.gserviceaccount.com)
+  holds roles/cloudkms.cryptoKeyEncrypterDecrypter on a job's CMEK key before
+  it will use that key. Terraform accepts the configuration without this
+  grant; only the GCP control plane rejects it, at apply or first-use time,
+  which makes the gap easy to miss until deployment.
+remediation: |
+  ```hcl
+  data "google_project" "current" {}
+
+  resource "google_kms_crypto_key_iam_member" "dataflow_service_agent" {
+    crypto_key_id = google_kms_crypto_key.main.id
+    role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+    member        = "serviceAccount:service-${data.google_project.current.number}@dataflow-service-producer-prod.iam.gserviceaccount.com"
+  }
+  ```
+resources:
+  google_dataflow_job:
+    filter:
+      path: kms_key_name
+      not_null: true
+    any:
+      - requires_companion:
+          type: google_kms_crypto_key_iam_member
+          linked_via:
+            from: kms_key_name
+            to: crypto_key_id
+          where:
+            path: role
+            equals: roles/cloudkms.cryptoKeyEncrypterDecrypter
+      - requires_companion:
+          type: google_kms_crypto_key_iam_binding
+          linked_via:
+            from: kms_key_name
+            to: crypto_key_id
+          where:
+            path: role
+            equals: roles/cloudkms.cryptoKeyEncrypterDecrypter

@@ -1,0 +1,35 @@
+id: HLD_GCP_484
+name: Dataflow jobs must use a dedicated service account, not the default Compute Engine service account
+principle: identity-and-access
+severity: HIGH
+rationale: |
+  Dataflow jobs that omit service_account_email run as the project's default
+  Compute Engine service account, which historically carries the broad
+  roles/editor role on the project. A job running as that identity — or a
+  vulnerability in a user-supplied pipeline template — can read or modify
+  any resource in the project, far beyond what a Dataflow worker needs. Use
+  a dedicated service account scoped to roles/dataflow.worker and only the
+  additional permissions the pipeline actually requires.
+remediation: |
+  ```hcl
+  resource "google_service_account" "dataflow_worker" {
+    account_id = "dataflow-worker"
+  }
+
+  resource "google_project_iam_member" "dataflow_worker" {
+    project = var.project
+    role    = "roles/dataflow.worker"
+    member  = "serviceAccount:${google_service_account.dataflow_worker.email}"
+  }
+
+  resource "google_dataflow_job" "main" {
+    service_account_email = google_service_account.dataflow_worker.email
+  }
+  ```
+resources:
+  google_dataflow_job:
+    all:
+      - path: service_account_email
+        not_null: true
+      - path: service_account_email
+        not_matches: "^[0-9]+-compute@developer\\.gserviceaccount\\.com$"

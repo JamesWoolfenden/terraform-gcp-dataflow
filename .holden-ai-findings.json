@@ -1,0 +1,35 @@
+{
+  "scan_date": "2026-08-07T20:30:00Z",
+  "scan_path": ".",
+  "findings": [
+    {
+      "id": "HOLDEN_AI_001",
+      "status": "fixed",
+      "first_seen": "2026-08-07",
+      "last_seen": "2026-08-07",
+      "suppression_reason": null,
+      "principle": "encryption",
+      "severity": "MEDIUM",
+      "confidence": "high",
+      "title": "CMEK-encrypted Dataflow job has no companion IAM grant for the Dataflow service agent or the worker service account on its KMS key",
+      "file": "example/examplea/google_kms_key_ring.tf",
+      "line": 6,
+      "resource": "google_kms_crypto_key.main",
+      "related_resources": [
+        "module.dataflow (example/examplea/module.dataflow.tf:2)",
+        "google_dataflow_job.main (via module.dataflow)"
+      ],
+      "explanation": "module.dataflow.tf wires kms_key_name = google_kms_crypto_key.main.id into the Dataflow job, and HLD_GCP_215 passes because kms_key_name is set. But Cloud Dataflow validates CMEK access at apply/first-use time, not at plan time, and requires TWO separate grants of roles/cloudkms.cryptoKeyEncrypterDecrypter on the key: (1) the Dataflow Service Agent (service-PROJECT_NUMBER@dataflow-service-producer-prod.iam.gserviceaccount.com), and (2) the job's controller/worker service account. Neither grant existed anywhere in this repo. Terraform applies cleanly and the job creation call fails with a permission-denied error from the Dataflow API. This is the same class of gap already codified for Healthcare (HLD_GCP_482) and Document AI (HLD_GCP_476), but no equivalent policy exists yet for google_dataflow_job, and HLD_GCP_215/216 (the two policies that do cover this resource type) don't check for it. The shipped HLD_GCP_483 policy (PR pending) only checks grant (1) — expressing grant (2) deterministically is harder in general since the expected grantee depends on whether service_account_email is set. As a follow-up to this finding, var.service_account_email was made a required (no-default) module variable, with a validation rule rejecting the default Compute Engine SA pattern outright, so grant (2)'s target is always a caller-supplied dedicated SA rather than the broad default SA — closing the gap at the module level rather than relying on policy coverage alone.",
+      "remediation": "Add a data \"google_project\" source and two google_kms_crypto_key_iam_member grants of roles/cloudkms.cryptoKeyEncrypterDecrypter on google_kms_crypto_key.main: one to the Dataflow Service Agent, one to the job's controller service account.",
+      "fixable": true,
+      "fix": "data \"google_project\" \"current\" {}\n\nresource \"google_service_account\" \"dataflow_worker\" {\n  account_id   = \"dataflow-worker\"\n  display_name = \"Dataflow worker (example)\"\n}\n\nresource \"google_project_iam_member\" \"dataflow_worker\" {\n  project = data.google_project.current.project_id\n  role    = \"roles/dataflow.worker\"\n  member  = \"serviceAccount:${google_service_account.dataflow_worker.email}\"\n}\n\nresource \"google_kms_crypto_key_iam_member\" \"dataflow_service_agent\" {\n  crypto_key_id = google_kms_crypto_key.main.id\n  role          = \"roles/cloudkms.cryptoKeyEncrypterDecrypter\"\n  member        = \"serviceAccount:service-${data.google_project.current.number}@dataflow-service-producer-prod.iam.gserviceaccount.com\"\n}\n\nresource \"google_kms_crypto_key_iam_member\" \"dataflow_worker\" {\n  crypto_key_id = google_kms_crypto_key.main.id\n  role          = \"roles/cloudkms.cryptoKeyEncrypterDecrypter\"\n  member        = \"serviceAccount:${google_service_account.dataflow_worker.email}\"\n}\n"
+    }
+  ],
+  "suggested_policies": [
+    {
+      "rationale": "Dataflow jobs configured with kms_key_name pass HLD_GCP_215 (kms_key_name not_null) but the Dataflow Service Agent still needs an explicit roles/cloudkms.cryptoKeyEncrypterDecrypter grant on that key before the API will actually use it — Terraform accepts the config, GCP rejects it at apply/first-use time. This mirrors the already-shipped HLD_GCP_476 (Document AI) and HLD_GCP_482 (Cloud Healthcare) policies for google_document_ai_processor and google_healthcare_dataset respectively; google_dataflow_job has no equivalent yet.",
+      "yaml": "id: HLD_PROPOSED_001\nname: Dataflow jobs using CMEK must grant the Dataflow service agent key access\nprinciple: encryption\nseverity: MEDIUM\nrationale: |\n  Cloud Dataflow validates that the Dataflow Service Agent\n  (service-PROJECT_NUMBER@dataflow-service-producer-prod.iam.gserviceaccount.com)\n  holds roles/cloudkms.cryptoKeyEncrypterDecrypter on a job's CMEK key before\n  it will use that key. Terraform accepts the configuration without this\n  grant; only the GCP control plane rejects it, at apply or first-use time,\n  which makes the gap easy to miss until deployment.\nremediation: |\n  ```hcl\n  data \"google_project\" \"current\" {}\n\n  resource \"google_kms_crypto_key_iam_member\" \"dataflow_service_agent\" {\n    crypto_key_id = google_kms_crypto_key.main.id\n    role          = \"roles/cloudkms.cryptoKeyEncrypterDecrypter\"\n    member        = \"serviceAccount:service-${data.google_project.current.number}@dataflow-service-producer-prod.iam.gserviceaccount.com\"\n  }\n  ```\nresources:\n  google_dataflow_job:\n    filter:\n      path: kms_key_name\n      not_null: true\n    any:\n      - requires_companion:\n          type: google_kms_crypto_key_iam_member\n          linked_via:\n            from: kms_key_name\n            to: crypto_key_id\n          where:\n            path: role\n            equals: roles/cloudkms.cryptoKeyEncrypterDecrypter\n      - requires_companion:\n          type: google_kms_crypto_key_iam_binding\n          linked_via:\n            from: kms_key_name\n            to: crypto_key_id\n          where:\n            path: role\n            equals: roles/cloudkms.cryptoKeyEncrypterDecrypter\n"
+    }
+  ],
+  "suggested_suppressions": []
+}

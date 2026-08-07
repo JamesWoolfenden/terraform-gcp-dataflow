@@ -1,0 +1,24 @@
+{
+  "scan_date": "2026-08-07T20:10:26Z",
+  "scan_path": ".",
+  "findings": [
+    {
+      "id": "HOLDEN_BP_001",
+      "status": "fixed",
+      "first_seen": "2026-08-07",
+      "last_seen": "2026-08-07",
+      "principle": "reliability",
+      "severity": "MEDIUM",
+      "confidence": "high",
+      "title": "on_delete is hardcoded to \"cancel\" even though the module supports streaming pipelines",
+      "file": "google_dataflow_job.main.tf",
+      "line": 20,
+      "resource": "google_dataflow_job.main",
+      "explanation": "on_delete controls what terraform destroy/replace does to the job: \"cancel\" terminates immediately, dropping any in-flight and buffered records; \"drain\" lets a streaming job finish processing what it has already ingested before stopping. The module exposes enable_streaming_engine, so it explicitly supports streaming jobs, but on_delete is hardcoded to \"cancel\" with no way for a caller to opt into \"drain\". Any streaming pipeline built with this module will lose in-flight data on every terraform destroy or replacement (e.g. a template_gcs_path or network change that forces recreation).",
+      "remediation": "Expose on_delete as a variable (default \"cancel\" to preserve current behavior for batch jobs) with validation restricting it to [\"drain\", \"cancel\"], and document that streaming jobs should set it to \"drain\".",
+      "fixable": true,
+      "fix": "variable \"on_delete\" {\n  type        = string\n  description = \"Behavior of google_dataflow_job on terraform destroy/replace: \\\"cancel\\\" or \\\"drain\\\". Streaming jobs should use \\\"drain\\\" to avoid dropping in-flight data\"\n  default     = \"cancel\"\n\n  validation {\n    condition     = contains([\"cancel\", \"drain\"], var.on_delete)\n    error_message = \"var.on_delete must be \\\"cancel\\\" or \\\"drain\\\"\"\n  }\n}\n"
+    }
+  ],
+  "suggested_policies": []
+}
