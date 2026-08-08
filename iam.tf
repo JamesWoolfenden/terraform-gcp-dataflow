@@ -32,13 +32,13 @@ resource "google_kms_crypto_key_iam_member" "dataflow_worker_kms" {
 }
 
 resource "google_storage_bucket_iam_member" "template" {
-  bucket = regex("^gs://([^/]+)", var.template_gcs_path)[0]
+  bucket = var.template_gcs_path
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.dataflow.email}"
 }
 
 resource "google_storage_bucket_iam_member" "temp_gcs" {
-  bucket = regex("^gs://([^/]+)", var.temp_gcs_location)[0]
+  bucket = var.bucket_name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.dataflow.email}"
 }

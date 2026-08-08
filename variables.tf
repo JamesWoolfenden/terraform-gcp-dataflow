@@ -196,3 +196,13 @@ variable "on_delete" {
     error_message = "var.on_delete must be \"cancel\" or \"drain\""
   }
 }
+
+variable "bucket_name" {
+  type        = string
+  description = "Name of the GCS bucket used for Dataflow templates and temporary files"
+
+  validation {
+    condition     = length(trimspace(var.bucket_name)) > 0
+    error_message = "var.bucket_name must be a non-empty string"
+  }
+}
