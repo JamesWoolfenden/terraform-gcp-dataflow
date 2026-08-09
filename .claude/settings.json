@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//e/Code/holden/**)",
+      "Bash(echo \"BUILD:$?\")",
+      "Bash(cd /e/Code/holden && go test ./internal/graph/... -v -run 'CapturePartialStrings' 2>&1 | tail -60)",
+      "Bash(cd /e/Code/holden && go test ./... 2>&1 | tail -20)"
+    ],
+    "additionalDirectories": [
+      "E:\\Code\\holden\\internal\\graph"
+    ]
+  }
+}
