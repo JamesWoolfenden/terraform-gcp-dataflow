@@ -1,12 +1,12 @@
 {
-  "scan_date": "2026-08-07T20:30:00Z",
+  "scan_date": "2026-08-09T00:00:00Z",
   "scan_path": ".",
   "findings": [
     {
       "id": "HOLDEN_AI_001",
       "status": "fixed",
       "first_seen": "2026-08-07",
-      "last_seen": "2026-08-07",
+      "last_seen": "2026-08-09",
       "suppression_reason": null,
       "principle": "encryption",
       "severity": "MEDIUM",
@@ -16,19 +16,64 @@
       "line": 6,
       "resource": "google_kms_crypto_key.main",
       "related_resources": [
-        "module.dataflow (example/examplea/module.dataflow.tf:2)",
+        "module.dataflow (example/examplea/module.dataflow.tf:4)",
         "google_dataflow_job.main (via module.dataflow)"
       ],
-      "explanation": "module.dataflow.tf wires kms_key_name = google_kms_crypto_key.main.id into the Dataflow job, and HLD_GCP_215 passes because kms_key_name is set. But Cloud Dataflow validates CMEK access at apply/first-use time, not at plan time, and requires TWO separate grants of roles/cloudkms.cryptoKeyEncrypterDecrypter on the key: (1) the Dataflow Service Agent (service-PROJECT_NUMBER@dataflow-service-producer-prod.iam.gserviceaccount.com), and (2) the job's controller/worker service account. Neither grant existed anywhere in this repo. Terraform applies cleanly and the job creation call fails with a permission-denied error from the Dataflow API. This is the same class of gap already codified for Healthcare (HLD_GCP_482) and Document AI (HLD_GCP_476), but no equivalent policy exists yet for google_dataflow_job, and HLD_GCP_215/216 (the two policies that do cover this resource type) don't check for it. The shipped HLD_GCP_483 policy (PR pending) only checks grant (1) — expressing grant (2) deterministically is harder in general since the expected grantee depends on whether service_account_email is set. As a follow-up to this finding, var.service_account_email was made a required (no-default) module variable, with a validation rule rejecting the default Compute Engine SA pattern outright, so grant (2)'s target is always a caller-supplied dedicated SA rather than the broad default SA — closing the gap at the module level rather than relying on policy coverage alone.",
-      "remediation": "Add a data \"google_project\" source and two google_kms_crypto_key_iam_member grants of roles/cloudkms.cryptoKeyEncrypterDecrypter on google_kms_crypto_key.main: one to the Dataflow Service Agent, one to the job's controller service account.",
+      "explanation": "Re-verified 2026-08-09: iam.tf now contains both google_kms_crypto_key_iam_member.dataflow_service_agent (grants the Dataflow Service Agent decrypt access) and google_kms_crypto_key_iam_member.dataflow_worker_kms (grants the same to the dedicated worker service account), both keyed off var.kms_key_name, and google_dataflow_job.main explicitly depends_on both. The gap this finding originally caught is closed.",
+      "remediation": "Already applied.",
+      "fixable": false
+    },
+    {
+      "id": "HOLDEN_AI_002",
+      "status": "fixed",
+      "first_seen": "2026-08-09",
+      "last_seen": "2026-08-09",
+      "suppression_reason": null,
+      "principle": "identity-and-access",
+      "severity": "MEDIUM",
+      "confidence": "high",
+      "title": "google_storage_bucket_iam_member.template grants access on a GCS object path, not a bucket — the objectViewer grant silently never resolves to a valid IAM binding",
+      "file": "iam.tf",
+      "line": 35,
+      "resource": "google_storage_bucket_iam_member.template",
+      "related_resources": [
+        "google_storage_bucket_iam_member.temp_gcs (iam.tf:40-44)",
+        "variable.template_gcs_path (variables.tf:28-36)",
+        "variable.bucket_name (variables.tf:200-208)",
+        "module.dataflow (example/examplea/module.dataflow.tf:9)"
+      ],
+      "explanation": "iam.tf:35 sets `bucket = var.template_gcs_path`, but that variable holds a full gs:// object path (variables.tf documents it as \"GCS path to the Dataflow job template\", and google_dataflow_job.main.tf:3 correctly consumes it as the job's template_gcs_path attribute). The `bucket` argument on google_storage_bucket_iam_member requires a bare bucket name — exactly what the sibling grant temp_gcs uses one line below (`bucket = var.bucket_name`, iam.tf:41). In the shipped example, module.dataflow.tf:9 sets template_gcs_path = \"gs://${google_storage_bucket.dataflow.name}/templates/example\", so this resource's bucket attribute becomes a GCS URI with a path segment — the Storage API rejects that as an invalid bucket name at apply time (bucket names cannot contain \"/\" or a scheme prefix). A rules engine can't catch this: HLD_GCP_018/039/210 (the only policies covering google_storage_bucket_iam_member) check the member/role, not whether the bucket argument is even a syntactically valid bucket name, and confirming the mismatch requires tracing template_gcs_path's value across the module boundary into the example's own bucket wiring — this is a same-shape regression to the one HLD_GCP_483 was written to catch, just on the storage side instead of the KMS side. Blast radius: apply fails outright on this resource, so the Dataflow worker SA never receives objectViewer on the template bucket regardless of whether template_gcs_path happens to share a bucket with bucket_name.",
+      "remediation": "Change iam.tf:35 to `bucket = var.bucket_name`, matching the sibling temp_gcs grant — the module already assumes a single bucket_name serves both temp and template storage (see HOLDEN_AI_003, which flags what that shared-bucket assumption implies for the temp_gcs grant's scope).",
       "fixable": true,
-      "fix": "data \"google_project\" \"current\" {}\n\nresource \"google_service_account\" \"dataflow_worker\" {\n  account_id   = \"dataflow-worker\"\n  display_name = \"Dataflow worker (example)\"\n}\n\nresource \"google_project_iam_member\" \"dataflow_worker\" {\n  project = data.google_project.current.project_id\n  role    = \"roles/dataflow.worker\"\n  member  = \"serviceAccount:${google_service_account.dataflow_worker.email}\"\n}\n\nresource \"google_kms_crypto_key_iam_member\" \"dataflow_service_agent\" {\n  crypto_key_id = google_kms_crypto_key.main.id\n  role          = \"roles/cloudkms.cryptoKeyEncrypterDecrypter\"\n  member        = \"serviceAccount:service-${data.google_project.current.number}@dataflow-service-producer-prod.iam.gserviceaccount.com\"\n}\n\nresource \"google_kms_crypto_key_iam_member\" \"dataflow_worker\" {\n  crypto_key_id = google_kms_crypto_key.main.id\n  role          = \"roles/cloudkms.cryptoKeyEncrypterDecrypter\"\n  member        = \"serviceAccount:${google_service_account.dataflow_worker.email}\"\n}\n"
+      "fix": "  bucket = var.bucket_name"
+    },
+    {
+      "id": "HOLDEN_AI_003",
+      "status": "open",
+      "first_seen": "2026-08-09",
+      "last_seen": "2026-08-09",
+      "unresolved_since": "2026-08-09",
+      "suppression_reason": null,
+      "principle": "identity-and-access",
+      "severity": "LOW",
+      "confidence": "medium",
+      "title": "objectAdmin grant for temp storage is scoped to the whole bucket, not a prefix — once HOLDEN_AI_002 is fixed, the narrower template objectViewer grant becomes a no-op whenever bucket_name and the template's bucket coincide",
+      "file": "iam.tf",
+      "line": 40,
+      "resource": "google_storage_bucket_iam_member.temp_gcs",
+      "related_resources": [
+        "google_storage_bucket_iam_member.template (iam.tf:34-38)",
+        "module.dataflow (example/examplea/module.dataflow.tf:8-10)"
+      ],
+      "explanation": "google_storage_bucket_iam_member.temp_gcs grants roles/storage.objectAdmin (read/write/delete) on the entire var.bucket_name bucket, with no IAM condition scoping it to temp_gcs_location's own path prefix (GCS IAM supports resource.name.startsWith(...) conditions for exactly this). The module's own example wires bucket_name, template_gcs_path, and temp_gcs_location to the same underlying bucket (google_storage_bucket.dataflow) at three different path prefixes (root, templates/, tmp/). Once HOLDEN_AI_002 is fixed and the template grant correctly targets that same bucket, the worker SA's effective permission on the template objects is objectAdmin (from temp_gcs, unscoped) — the objectViewer grant intended to keep the worker read-only on templates provides no actual restriction, because a broader admin grant on the same resource already subsumes it. This is a composition a rules engine can't see: each grant is individually a reasonable role for its stated purpose, and nothing in either resource's own attributes reveals that they land on the same bucket in typical usage — only the combination, and the templates' actual location, exposes that the intended least-privilege split has no effect.",
+      "remediation": "Add an IAM condition to temp_gcs scoping objectAdmin to the temp_gcs_location prefix (e.g. condition { expression = \"resource.name.startsWith(\\\"projects/_/buckets/${var.bucket_name}/objects/tmp/\\\")\" ... }), or document that callers should use a separate bucket for templates vs. temp storage if a real read-only boundary on templates is required. Which approach is right depends on whether template/temp separation is meant to be enforced by this module or left to the caller's bucket layout — a judgment call, not a mechanical fix.",
+      "fixable": false
     }
   ],
   "suggested_policies": [
     {
-      "rationale": "Dataflow jobs configured with kms_key_name pass HLD_GCP_215 (kms_key_name not_null) but the Dataflow Service Agent still needs an explicit roles/cloudkms.cryptoKeyEncrypterDecrypter grant on that key before the API will actually use it — Terraform accepts the config, GCP rejects it at apply/first-use time. This mirrors the already-shipped HLD_GCP_476 (Document AI) and HLD_GCP_482 (Cloud Healthcare) policies for google_document_ai_processor and google_healthcare_dataset respectively; google_dataflow_job has no equivalent yet.",
-      "yaml": "id: HLD_PROPOSED_001\nname: Dataflow jobs using CMEK must grant the Dataflow service agent key access\nprinciple: encryption\nseverity: MEDIUM\nrationale: |\n  Cloud Dataflow validates that the Dataflow Service Agent\n  (service-PROJECT_NUMBER@dataflow-service-producer-prod.iam.gserviceaccount.com)\n  holds roles/cloudkms.cryptoKeyEncrypterDecrypter on a job's CMEK key before\n  it will use that key. Terraform accepts the configuration without this\n  grant; only the GCP control plane rejects it, at apply or first-use time,\n  which makes the gap easy to miss until deployment.\nremediation: |\n  ```hcl\n  data \"google_project\" \"current\" {}\n\n  resource \"google_kms_crypto_key_iam_member\" \"dataflow_service_agent\" {\n    crypto_key_id = google_kms_crypto_key.main.id\n    role          = \"roles/cloudkms.cryptoKeyEncrypterDecrypter\"\n    member        = \"serviceAccount:service-${data.google_project.current.number}@dataflow-service-producer-prod.iam.gserviceaccount.com\"\n  }\n  ```\nresources:\n  google_dataflow_job:\n    filter:\n      path: kms_key_name\n      not_null: true\n    any:\n      - requires_companion:\n          type: google_kms_crypto_key_iam_member\n          linked_via:\n            from: kms_key_name\n            to: crypto_key_id\n          where:\n            path: role\n            equals: roles/cloudkms.cryptoKeyEncrypterDecrypter\n      - requires_companion:\n          type: google_kms_crypto_key_iam_binding\n          linked_via:\n            from: kms_key_name\n            to: crypto_key_id\n          where:\n            path: role\n            equals: roles/cloudkms.cryptoKeyEncrypterDecrypter\n"
+      "rationale": "google_storage_bucket_iam_member.bucket (and the analogous google_storage_bucket_iam_binding.bucket) must be a bare GCS bucket name — the Storage API rejects a gs:// URI or any value containing a \"/\" with an apply-time error, since bucket names cannot contain a scheme prefix or path separator. HOLDEN_AI_002 in this repo is exactly this shape: a GCS object-path variable passed where a bucket-name variable belongs. This is a general, resource-type-and-attribute-scoped, unambiguous check (regex format), not specific to this repo's variables, and none of the three existing policies covering google_storage_bucket_iam_member (HLD_GCP_018, HLD_GCP_039, HLD_GCP_210) check the bucket attribute's own format — they check member/role only.",
+      "yaml": "id: HLD_PROPOSED_002\nname: Storage bucket IAM member/binding bucket must be a bare bucket name, not a GCS path\nprinciple: identity-and-access\nseverity: MEDIUM\nrationale: |\n  google_storage_bucket_iam_member and google_storage_bucket_iam_binding's\n  bucket argument must be a bare GCS bucket name. A gs:// URI or any value\n  containing a path segment (e.g. a template or object path mistakenly\n  passed instead of the bucket name) is rejected by the Storage API at\n  apply time with an invalid-bucket-name error, so the intended IAM grant\n  never takes effect — Terraform accepts the configuration, but the API\n  does not.\nremediation: |\n  Pass the bucket's bare name (e.g. google_storage_bucket.example.name, or\n  a variable documented and validated as a bucket name) rather than a\n  gs://bucket/path value.\nresources:\n  google_storage_bucket_iam_member:\n    path: bucket\n    not_matches: \"^gs://|/\"\n  google_storage_bucket_iam_binding:\n    path: bucket\n    not_matches: \"^gs://|/\"\n"
     }
   ],
   "suggested_suppressions": []

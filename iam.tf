@@ -32,7 +32,7 @@ resource "google_kms_crypto_key_iam_member" "dataflow_worker_kms" {
 }
 
 resource "google_storage_bucket_iam_member" "template" {
-  bucket = var.template_gcs_path
+  bucket = var.bucket_name
   role   = "roles/storage.objectViewer"
   member = "serviceAccount:${google_service_account.dataflow.email}"
 }
