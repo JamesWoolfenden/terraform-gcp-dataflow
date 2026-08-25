@@ -206,3 +206,51 @@ variable "bucket_name" {
     error_message = "var.bucket_name must be a non-empty string"
   }
 }
+variable "flex_template_gcs_path" {
+  type        = string
+  description = "Cloud Storage path of the Flex Template container spec. Empty to create no Flex Template job"
+  default     = ""
+
+  validation {
+    condition     = var.flex_template_gcs_path == "" || can(regex("^gs://", var.flex_template_gcs_path))
+    error_message = "var.flex_template_gcs_path must be a gs:// URI"
+  }
+}
+
+variable "pipeline_schedule" {
+  type        = string
+  description = "Cron schedule for a Data Pipelines job that launches the Flex Template. Empty to create no pipeline"
+  default     = ""
+
+  validation {
+    condition     = var.pipeline_schedule == "" || length(split(" ", trimspace(var.pipeline_schedule))) == 5
+    error_message = "var.pipeline_schedule must be a five-field cron expression"
+  }
+}
+
+variable "pipeline_time_zone" {
+  type        = string
+  description = "IANA time zone the pipeline schedule is interpreted in"
+  default     = "Etc/UTC"
+
+  validation {
+    condition     = length(trimspace(var.pipeline_time_zone)) > 0
+    error_message = "var.pipeline_time_zone must be a non-empty string"
+  }
+}
+
+variable "flex_template_bucket_name" {
+  type        = string
+  description = "Name of the GCS bucket that flex_template_gcs_path's container spec lives in. Required when flex_template_gcs_path is set; ignored otherwise"
+  default     = ""
+
+  validation {
+    condition     = var.flex_template_bucket_name == "" || length(trimspace(var.flex_template_bucket_name)) > 0
+    error_message = "var.flex_template_bucket_name must be null or a non-empty string"
+  }
+
+  validation {
+    condition     = var.flex_template_gcs_path == "" || var.flex_template_bucket_name != ""
+    error_message = "var.flex_template_bucket_name is required when var.flex_template_gcs_path is set"
+  }
+}
