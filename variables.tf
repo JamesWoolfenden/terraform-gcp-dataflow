@@ -206,6 +206,7 @@ variable "bucket_name" {
     error_message = "var.bucket_name must be a non-empty string"
   }
 }
+
 variable "flex_template_gcs_path" {
   type        = string
   description = "Cloud Storage path of the Flex Template container spec. Empty to create no Flex Template job"
@@ -252,5 +253,26 @@ variable "flex_template_bucket_name" {
   validation {
     condition     = var.flex_template_gcs_path == "" || var.flex_template_bucket_name != ""
     error_message = "var.flex_template_bucket_name is required when var.flex_template_gcs_path is set"
+  }
+}
+
+variable "scheduler_service_account_id" {
+  type        = string
+  description = "account_id for the dedicated service account used to launch scheduled Data Pipelines jobs. Kept separate from service_account_id (the worker identity) so a compromised pipeline transform can't inherit project-wide job-launch privileges. Required when pipeline_schedule is set; ignored otherwise"
+  default     = ""
+
+  validation {
+    condition     = var.scheduler_service_account_id == "" || (length(var.scheduler_service_account_id) >= 6 && length(var.scheduler_service_account_id) <= 30)
+    error_message = "var.scheduler_service_account_id must be between 6 and 30 characters"
+  }
+
+  validation {
+    condition     = var.scheduler_service_account_id == "" || can(regex("^[a-z][a-z0-9-]*[a-z0-9]$", var.scheduler_service_account_id))
+    error_message = "var.scheduler_service_account_id must start with a lowercase letter, end with a lowercase letter or digit, and contain only lowercase letters, digits, and hyphens"
+  }
+
+  validation {
+    condition     = var.pipeline_schedule == "" || var.scheduler_service_account_id != ""
+    error_message = "var.scheduler_service_account_id is required when var.pipeline_schedule is set"
   }
 }

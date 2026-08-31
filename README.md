@@ -17,6 +17,10 @@ resource "google_project_iam_custom_role" "terraform_pike" {
     "cloudkms.cryptoKeys.setIamPolicy",
     "dataflow.jobs.create",
     "dataflow.jobs.get",
+    "datapipelines.pipelines.create",
+    "datapipelines.pipelines.delete",
+    "datapipelines.pipelines.get",
+    "datapipelines.pipelines.update",
     "iam.serviceAccounts.create",
     "iam.serviceAccounts.delete",
     "iam.serviceAccounts.get",
@@ -38,8 +42,8 @@ resource "google_project_iam_custom_role" "terraform_pike_plan" {
   permissions = [
     "cloudkms.cryptoKeys.getIamPolicy",
     "dataflow.jobs.get",
+    "datapipelines.pipelines.get",
     "iam.serviceAccounts.get",
-    "resourcemanager.organizations.get",
     "resourcemanager.projects.get",
     "resourcemanager.projects.getIamPolicy",
     "storage.buckets.getIamPolicy"

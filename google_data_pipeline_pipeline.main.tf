@@ -12,7 +12,7 @@ resource "google_data_pipeline_pipeline" "main" {
     time_zone = var.pipeline_time_zone
   }
 
-  scheduler_service_account_email = google_service_account.dataflow.email
+  scheduler_service_account_email = google_service_account.scheduler[0].email
 
   workload {
     dataflow_launch_template_request {

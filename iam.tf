@@ -42,36 +42,3 @@ resource "google_storage_bucket_iam_member" "temp_gcs" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.dataflow.email}"
 }
-
-# google_dataflow_flex_template_job and google_data_pipeline_pipeline pull
-# their container spec from flex_template_gcs_path, which is not assumed to
-# be bucket_name's bucket (see the objectViewer grant above) — needs its own
-# grant on flex_template_bucket_name.
-resource "google_storage_bucket_iam_member" "flex_template" {
-  count = var.flex_template_gcs_path == "" ? 0 : 1
-
-  bucket = var.flex_template_bucket_name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-# Flex Template jobs run from a container image; the worker SA needs pull
-# access to whatever Artifact Registry repository hosts it.
-resource "google_project_iam_member" "flex_template_image_pull" {
-  count = var.flex_template_gcs_path == "" ? 0 : 1
-
-  project = var.project
-  role    = "roles/artifactregistry.reader"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
-
-# roles/dataflow.worker (above) lets the SA run as a worker but does not
-# include job-creation — google_data_pipeline_pipeline's
-# scheduler_service_account_email needs to actually launch jobs on schedule.
-resource "google_project_iam_member" "dataflow_developer" {
-  count = var.pipeline_schedule == "" ? 0 : 1
-
-  project = var.project
-  role    = "roles/dataflow.developer"
-  member  = "serviceAccount:${google_service_account.dataflow.email}"
-}
