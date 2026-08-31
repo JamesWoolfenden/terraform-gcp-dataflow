@@ -78,3 +78,13 @@ resource "google_kms_crypto_key_iam_member" "gcs_service_agent" {
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
   member        = "serviceAccount:service-${data.google_project.current.number}@gs-project-accounts.iam.gserviceaccount.com"
 }
+
+# Cloud Storage delivers usage/storage logs as this group — see HLD_GCP_536.
+# Without this grant, dataflow.logging.log_bucket points at a bucket that
+# silently never receives anything (uniform bucket-level access removes the
+# legacy ACL fallback that used to mask this).
+resource "google_storage_bucket_iam_member" "log_delivery" {
+  bucket = google_storage_bucket.dataflow_logs.name
+  role   = "roles/storage.objectCreator"
+  member = "group:cloud-storage-analytics@google.com"
+}
