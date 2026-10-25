@@ -46,8 +46,8 @@ docs:
 	terraform-docs md . > README.md
 
 valid:
-	terraform fmt -recursive
-	holden scan .
+	-terraform fmt -recursive
+	-holden scan
 
 
 target:

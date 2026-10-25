@@ -4,12 +4,12 @@ resource "google_kms_key_ring" "main" {
 }
 
 resource "google_kms_crypto_key" "main" {
-  name            = "dataflow-key"
-  key_ring        = google_kms_key_ring.main.id
-  rotation_period = "2592000s" # 30 days
+  name                       = "dataflow-key"
+  key_ring                   = google_kms_key_ring.main.id
+  rotation_period            = "2592000s" # 30 days
+  destroy_scheduled_duration = "2592000s" # 1 day
 
   lifecycle {
     prevent_destroy = true
   }
 }
-
