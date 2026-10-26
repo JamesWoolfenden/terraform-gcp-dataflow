@@ -1,4 +1,5 @@
 {
+  "category": "all",
   "findings": [
     {
       "confidence": "high",
@@ -52,7 +53,7 @@
       "first_seen": "2026-08-09",
       "fixable": false,
       "id": "HOLDEN_AI_003",
-      "last_seen": "2026-08-09",
+      "last_seen": "2026-10-26",
       "line": 40,
       "principle": "identity-and-access",
       "related_resources": [
@@ -62,10 +63,10 @@
       "remediation": "Add an IAM condition to temp_gcs scoping objectAdmin to the temp_gcs_location prefix (e.g. condition { expression = \"resource.name.startsWith(\\\"projects/_/buckets/${var.bucket_name}/objects/tmp/\\\")\" ... }), or document that callers should use a separate bucket for templates vs. temp storage if a real read-only boundary on templates is required. Which approach is right depends on whether template/temp separation is meant to be enforced by this module or left to the caller's bucket layout \u2014 a judgment call, not a mechanical fix.",
       "resource": "google_storage_bucket_iam_member.temp_gcs",
       "severity": "LOW",
-      "status": "open",
-      "suppression_reason": null,
+      "status": "suppressed",
+      "suppression_reason": "Accepted by owner 2026-10-26: template/temp separation is left to the caller's bucket layout, not enforced by this module.",
       "title": "objectAdmin grant for temp storage is scoped to the whole bucket, not a prefix \u2014 once HOLDEN_AI_002 is fixed, the narrower template objectViewer grant becomes a no-op whenever bucket_name and the template's bucket coincide",
-      "unresolved_since": "2026-08-09"
+      "unresolved_since": null
     },
     {
       "confidence": "high",
@@ -89,9 +90,33 @@
       "status": "fixed",
       "suppression_reason": null,
       "title": "The Dataflow worker identity and the Data Pipelines scheduler identity are the same service account, so a compromised worker inherits project-wide job-launch and image-pull privileges"
+    },
+    {
+      "confidence": "medium",
+      "explanation": "The pipeline launches Dataflow jobs as the scheduler SA (scheduler_service_account_email) while the launch environment sets service_account_email to the worker SA (line 32). Creating a job with a different worker identity requires the caller to hold iam.serviceAccounts.actAs on that SA (roles/iam.serviceAccountUser). No google_service_account_iam_* resource or serviceAccountUser grant exists anywhere in the module; the scheduler only gets roles/dataflow.developer. Terraform applies cleanly and the scheduled run fails with a permission error at first trigger. Medium confidence because the consumer could supply the grant outside the module.",
+      "file": "google_data_pipeline_pipeline.main.tf",
+      "first_seen": "2026-10-26",
+      "fix": "resource \"google_service_account_iam_member\" \"scheduler_act_as_worker\" {\n  count = var.pipeline_schedule == \"\" ? 0 : 1\n\n  service_account_id = google_service_account.dataflow.name\n  role               = \"roles/iam.serviceAccountUser\"\n  member             = \"serviceAccount:${google_service_account.scheduler[0].email}\"\n}",
+      "fixable": true,
+      "id": "HOLDEN_AI_005",
+      "last_seen": "2026-10-26",
+      "line": 1,
+      "principle": "reliability",
+      "related_resources": [
+        "google_service_account.scheduler (iam.flex.tf:33-39)",
+        "google_service_account.dataflow (iam.tf:5-9)",
+        "google_project_iam_member.dataflow_developer (iam.flex.tf:41-47)"
+      ],
+      "remediation": "Add a google_service_account_iam_member granting roles/iam.serviceAccountUser on google_service_account.dataflow to the scheduler SA, scoped to that one SA rather than project-wide, and add it to the pipeline's depends_on.",
+      "resource": "google_data_pipeline_pipeline.main",
+      "severity": "MEDIUM",
+      "status": "fixed",
+      "suppression_reason": null,
+      "title": "Scheduler service account has no iam.serviceAccountUser grant on the worker service account, so scheduled launches cannot act as the worker identity",
+      "unresolved_since": null
     }
   ],
-  "scan_date": "2026-08-16T00:00:00Z",
+  "scan_date": "2026-10-26T00:00:00Z",
   "scan_path": ".",
   "suggested_policies": [],
   "suggested_suppressions": []

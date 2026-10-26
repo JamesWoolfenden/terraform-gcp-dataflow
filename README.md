@@ -24,6 +24,8 @@ resource "google_project_iam_custom_role" "terraform_pike" {
     "iam.serviceAccounts.create",
     "iam.serviceAccounts.delete",
     "iam.serviceAccounts.get",
+    "iam.serviceAccounts.getIamPolicy",
+    "iam.serviceAccounts.setIamPolicy",
     "iam.serviceAccounts.update",
     "resourcemanager.projects.get",
     "resourcemanager.projects.getIamPolicy",
@@ -44,6 +46,7 @@ resource "google_project_iam_custom_role" "terraform_pike_plan" {
     "dataflow.jobs.get",
     "datapipelines.pipelines.get",
     "iam.serviceAccounts.get",
+    "iam.serviceAccounts.getIamPolicy",
     "resourcemanager.projects.get",
     "resourcemanager.projects.getIamPolicy",
     "storage.buckets.getIamPolicy"

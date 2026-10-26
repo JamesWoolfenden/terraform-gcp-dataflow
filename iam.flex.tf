@@ -38,6 +38,16 @@ resource "google_service_account" "scheduler" {
   project      = var.project
 }
 
+# The scheduler launches jobs that run as the worker SA, so it needs actAs on
+# that one account (not project-wide).
+resource "google_service_account_iam_member" "scheduler_act_as_worker" {
+  count = var.pipeline_schedule == "" ? 0 : 1
+
+  service_account_id = google_service_account.dataflow.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.scheduler[0].email}"
+}
+
 resource "google_project_iam_member" "dataflow_developer" {
   count = var.pipeline_schedule == "" ? 0 : 1
 

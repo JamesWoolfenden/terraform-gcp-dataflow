@@ -6,6 +6,7 @@ resource "google_data_pipeline_pipeline" "main" {
   type         = "PIPELINE_TYPE_BATCH"
   state        = "STATE_ACTIVE"
   region       = var.region
+  project      = var.project
 
   schedule_info {
     schedule  = var.pipeline_schedule
@@ -43,6 +44,7 @@ resource "google_data_pipeline_pipeline" "main" {
   depends_on = [
     google_project_iam_member.dataflow_worker,
     google_project_iam_member.dataflow_developer,
+    google_service_account_iam_member.scheduler_act_as_worker,
     google_kms_crypto_key_iam_member.dataflow_service_agent,
     google_kms_crypto_key_iam_member.dataflow_worker_kms,
     google_storage_bucket_iam_member.flex_template,
